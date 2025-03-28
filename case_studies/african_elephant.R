@@ -7,7 +7,7 @@ library(LaMa)
 # install.packages("scales") # for muted colors
 library(scales)
 
-#
+
 ## data
 data = read.csv("./data/elephant_data.csv")
 data$tod = 2 * data$tod
