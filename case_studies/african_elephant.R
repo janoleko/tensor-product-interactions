@@ -500,10 +500,7 @@ for(day in days){
 
 
 
-
-
-
-
+# More plots: visualising the fitted surfaces in 3D -----------------------
 
 ### predict tpm over the year
 Z_predict = predict(modmat_ti,
@@ -591,28 +588,3 @@ plot_ly(x = tod, y = doy, z = eta2, type = "surface") %>%
       zaxis = list(title = "Pr(state 1)")
     )
   )
-
-# for(day in 1:365){
-#   cat(day, "\n")
-#   Z_predict = pred_matrix(modmat,
-#                           newdata = data.frame(tod = 1:12*2, doy = day))
-#   Gamma = tpm_g(Z_predict, beta)
-#   Deltas[,,day] = stationary_p(Gamma)
-# }
-
-par(mfrow = c(1,1))
-for(day in 1:365){
-  plot(1:12*2, Deltas[,2,day], type = "b", lwd = 2, col = color[2],
-       xlab = "time of day", ylab = "Pr(state 1)",
-       ylim = c(0,1), bty = "n",
-       main = paste("doy =", day))
-  Sys.sleep(0.1)
-}
-
-par(mfrow = c(3,4))
-for(day in c(1:12*30)){
-  plot(1:12*2, Deltas[,2,day], type = "b", lwd = 2, col = color[2],
-       xlab = "time of day", ylab = "Pr(state 1)",
-       ylim = c(0,1), bty = "n",
-       main = paste("doy =", day))
-}
