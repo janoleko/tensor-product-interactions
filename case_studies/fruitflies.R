@@ -4,21 +4,36 @@ library(LaMa)
 library(scales)
 
 
-## data
-data <- readRDS("./data/fruitflies_genotype0.rds")
-data <- readRDS("./data/fruitflies_genotype1.rds")
+## loading the data
+# wild-type
+data0 <- readRDS("./data/fruitflies_genotype0.rds")
+# modified genotype
+data1 <- readRDS("./data/fruitflies_genotype1.rds")
+
+
+## number of observations
+nrow(data0)
+nrow(data1)
+
+
+## ranges
+range(data0$activity, na.rm = TRUE)
+range(data1$activity, na.rm = TRUE)
 
 
 ## unique animal IDs
-aniIDs <- unique(data$aniID)
-nAnimals <- length(aniIDs)
+aniIDs <- list(
+  unique(data0$aniID),
+  unique(data1$aniID)
+  )
+(nAnimals <- sapply(aniIDs, length))
 
 
-## color vector
+## color vector for plotting later
 color <- c("orange", "deepskyblue")
 
 
-## penalised log-likelihood function
+## penalised log-likelihood function for the tensor-product model
 pnll <- function(par) {
   getAll(par, dat) # extract everything from parameter and data list
 
@@ -60,20 +75,33 @@ pnll <- function(par) {
       beta_tiLD, beta_tiDD), S, lambda)
 }
 
-
-## build design and penalty matrices for the model
-modmat <- make_matrices(
+# model matrices for both genotypes
+modmat0 <- make_matrices(
   ~ condition +
     s(aniID, bs = "re", by = condition) +
-    s(tod, bs = "cc", by = condition, k = 8) +
-    ti(aniID, tod, bs = c("re", "cc"), by = condition, k = c(nAnimals, 8)),
-  data = data,
+    s(tod, bs = "cc", by = condition, k = 10) +
+    ti(aniID, tod, bs = c("re", "cc"), by = condition, k = c(nAnimals[1], 10)),
+  data = data0,
   knots = list(tod = c(0, 24))
 )
+modmat1 <- make_matrices(
+  ~ condition +
+    s(aniID, bs = "re", by = condition) +
+    s(tod, bs = "cc", by = condition, k = 10) +
+    ti(aniID, tod, bs = c("re", "cc"), by = condition, k = c(nAnimals[2], 10)),
+  data = data1,
+  knots = list(tod = c(0, 24))
+)
+modmat <- list(modmat0, modmat1)
 
-Z <- modmat$Z # design matrix
-S <- modmat$S # list of penalty matrices for s(ID) and s(time) and list of penalty matrices for ti(ID, time)
-pardim <- modmat$pardim
+
+## fitting models
+# change this to fit the model to the wild type (1) or modified genotype (2)
+genotype = 2
+
+Z <- modmat[[genotype]]$Z # design matrix
+S <- modmat[[genotype]]$S # list of penalty matrices for s(ID) and s(time) and list of penalty matrices for ti(ID, time)
+pardim <- modmat[[genotype]]$pardim # to easily set up initial parameters
 
 # initial parameters
 par <- list(
@@ -89,13 +117,14 @@ par <- list(
 )
 
 # data and hyperparameter list
+thisdata <- data[[genotype]]
 dat <- list(
-  activity = data$activity,
-  condition = data$condition,
-  trackID = data$trackID,
-  trackInd = calc_trackInd(as.vector(data$trackID)),
-  Z = Z,
-  S = S,
+  activity = thisdata$activity, # observations
+  condition = thisdata$condition, # LD or DD variable
+  trackID = thisdata$trackID, # track ID
+  trackInd = calc_trackInd(thisdata$trackID), # index of the first observation of each track (for initial distributions)
+  Z = Z, # design matrix for smooth terms
+  S = S, # penalty matrices for smooth terms
   lambda = c(rep(1e3, 8), rep(1e4, 8)) # initial lambda: length equals total number of random effects
 )
 
@@ -112,140 +141,122 @@ map <- list(lambda = c(
 
 ## fitting the model with qREML
 system.time(
-  mod <- qreml2(pnll, par, dat,
+  mod <- qreml(pnll, par, dat,
     random = c(
       "beta_riLD", "beta_riDD",
       "beta_timeLD", "beta_timeDD",
       "beta_tiLD", "beta_tiDD"
     ),
     map = map,
-    silent = 0,
-    alpha = 0.4,
-    control = list(REPORT = 25),
-    maxiter = 50
+    silent = 0
   )
 )
-# mod0 2.75 h
-# mod1 ?
-# save(mod, file = "./case_studies/objects/fruitflies_mod_genotype1.RData")
+# mod0 2.5 h
+# mod1 2.3 h
+saveRDS(mod0, "./case_studies/objects/fruitflies_mod_genotype0.rds")
+saveRDS(mod1, "./case_studies/objects/fruitflies_mod_genotype1.rds")
 
-load(file = "./case_studies/objects/fruitflies_mod_genotype1.RData")
+########################################################################
 
-round(sqrt(mod$lambda^-1), 2)
 
-# sdr = sdreport_outer(mod)
+## loading saved models
+mod0 <- readRDS(file = "./case_studies/objects/fruitflies_mod_genotype0.rds")
+mod1 <- readRDS(file = "./case_studies/objects/fruitflies_mod_genotype1.rds")
 
-# save(mod, file = "./case_studies/models/fruitflies_mod_full.RData")
-# load(file = "./case_studies/models/fruitflies_mod_full.RData")
+# # uncertainty quantification in estimated variance paramters
+# sdr0 = sdreport_outer(mod0, invert = TRUE)
+# saveRDS(sdr0, "./case_studies/objects/fruitflies_sdr_genotype0.rds")
 
-AIC(mod)
-BIC(mod)
+# sdr1 = sdreport_outer(mod1, invert = TRUE)
+# saveRDS(sdr1, "./case_studies/objects/fruitflies_sdr_genotype1.rds")
+
+# information criteria
+AIC(mod0)
+AIC(mod1)
+BIC(mod0)
+BIC(mod1)
 
 ## extracting parameters
-beta <- mod$beta
+beta <- list(beta0 = mod0$beta,
+             beta1 = mod1$beta)
 
 ## plotting periodically stationary distribution
 L <- 48 # number of unique times of day
-Delta_mean <- array(dim = c(L, 2, 2)) # mean array
-Delta <- array(dim = c(L, 2, 2, nAnimals)) # array for all flies
-conds <- unique(data$condition) # unique conditions
+Delta_mean <- array(dim = c(L, 2, 2, 2)) # mean array
+Delta <- list(array(dim = c(L, 2, 2, nAnimals[1])),
+              array(dim = c(L, 2, 2, nAnimals[2])))
+conds <- unique(data0$condition) # unique conditions
 
 # estimated stationary distribution for each fly
-for (cond in 1:2) {
-  Z_pred <- pred_matrix(
-    modmat,
-    data.frame(
-      tod = rep(1:L / 2, nAnimals),
-      aniID = rep(aniIDs, each = L),
-      condition = conds[cond]
+for(m in 1:2){
+  for (cond in 1:2) {
+    Z_pred <- pred_matrix(
+      modmat[[m]],
+      data.frame(
+        tod = rep(1:L / 2, nAnimals[m]),
+        aniID = rep(aniIDs[[m]], each = L),
+        condition = conds[cond]
+      )
     )
-  )
-  Z_list <- lapply(seq_len(nAnimals), function(a) Z_pred[((a - 1) * L + 1):(a * L), , drop = FALSE])
-  for (a in 1:nAnimals) {
-    Delta[, , cond, a] <- stationary_p(tpm_g(Z_list[[a]], beta))
+    Z_list <- lapply(seq_len(nAnimals[m]), function(a) Z_pred[((a - 1) * L + 1):(a * L), , drop = FALSE])
+    for (a in seq_len(nAnimals[m])) {
+      Delta[[m]][, , cond, a] <- stationary_p(tpm_g(Z_list[[a]], beta[[m]]))
+    }
   }
 }
-# save(Delta, file = "./case_studies/objects/fruitflies_Delta_genotype0.RData")
-load(file = "./case_studies/objects/fruitflies_Delta_genotype0.RData")
 
-for (cond in 1:2) {
-  Z_pred <- pred_matrix(
-    modmat,
-    data.frame(
-      tod = 1:L / 2,
-      aniID = "newID",
-      condition = conds[cond]
+for(m in 1:2){
+  for (cond in 1:2) {
+    Z_pred <- pred_matrix(
+      modmat[[m]],
+      data.frame(
+        tod = 1:L / 2,
+        aniID = "newID",
+        condition = conds[cond]
+      )
     )
-  )
-  Delta_mean[, , cond] <- stationary_p(tpm_g(Z_pred, beta))
+    Delta_mean[, , cond, m] <- stationary_p(tpm_g(Z_pred, beta[[m]]))
+  }
 }
-# save(Delta_mean, file = "./objects/case_studies/fruitflies_Delta_mean_genotype0.RData")
-load(file = "./case_studies/objects/fruitflies_Delta_mean_genotype0.RData")
+
 
 # plotting
 conditions <- c("LD", "DD")
 state <- 2
 
 color <- c("orange", "deepskyblue")
-# pdf("./case_studies/figs/fruitflies_stationary_genotype0.pdf", width = 8, height = 3.5)
+dark_color <- adjustcolor(color, red.f = 0.8, green.f = 0.8, blue.f = 0.8)
+# darken colors
+
+
+# pdf("./case_studies/figs/fruitflies_stationary.pdf", width = 8, height = 3.5)
 par(mfrow = c(1, 4))
-for (cond in 1:2) {
-  plot(NA,
-    xlim = c(0, 24), ylim = c(0, 1), xlab = "time of day", ylab = "Pr(active)",
-    bty = "n", main = conditions[cond], xaxt = "n"
-  )
-  axis(1, at = seq(0, 24, by = 4), labels = seq(0, 24, by = 4))
-  # individual flies
-  for (a in 1:nAnimals) {
-    lines(1:L / 2, Delta[, state, cond, a], col = alpha(a, 0.3), type = "l", pch = 20)
-  }
-  # mean
-  lines(1:L / 2, Delta_mean[, state, cond], type = "l", lwd = 2)
-  points(1:L / 2, Delta_mean[, state, cond], pch = 16)
 
-  # indicate light
-  polygon(x = c(0, 8, 8, 0), y = c(-0.02, -0.02, 0, 0), col = "black", border = "black")
-  if(cond == 1){
-    polygon(x = c(8, 20, 20, 8), y = c(-0.02, -0.02, 0, 0), col = "white", border = "black")
-  } else{
-    polygon(x = c(8, 20, 20, 8), y = c(-0.02, -0.02, 0, 0), col = "#00000098", border = "black")
+for(m in 1:2){
+  for (cond in 1:2) {
+    plot(NA,
+         xlim = c(0, 24), ylim = c(0, 1), xlab = "time of day", ylab = "Pr(active)",
+         bty = "n", main = conditions[cond], xaxt = "n"
+    )
 
+    # indicate light
+    polygon(x = c(0, 8, 8, 0), y = c(-0.005, -0.005, 0.005, 0.005), col = "black", border = "black")
+    if(cond == 1){
+      polygon(x = c(8, 20, 20, 8), y = c(-0.005, -0.005, 0.005, 0.005), col = "white", border = "black")
+    } else{
+      polygon(x = c(8, 20, 20, 8), y = c(-0.005, -0.005, 0.005, 0.005), col = "#00000098", border = "black")
+
+    }
+    polygon(x = c(20, 24, 24, 20), y = c(-0.005, -0.005, 0.005, 0.005), col = "black", border = "black")
+
+    axis(1, at = seq(0, 24, by = 4), labels = seq(0, 24, by = 4))
+    # individual flies
+    for (a in 1:nAnimals[m]) {
+      lines(1:L / 2, Delta[[m]][, state, cond, a], col = alpha(color[m], 0.3), type = "l", pch = 20)
+    }
+    # mean
+    lines(1:L / 2, Delta_mean[, state, cond, m], type = "l", lwd = 2, col = "#000000")
+    points(1:L / 2, Delta_mean[, state, cond, m], pch = 16, col = "#000000")
   }
-  polygon(x = c(20, 24, 24, 20), y = c(-0.02, -0.02, 0, 0), col = "black", border = "black")
 }
-
-
-# differences only
-DeltaDiff <- Delta
-for (a in 1:nAnimals) {
-  DeltaDiff[, , , a] <- Delta[, , , a] - Delta_mean
-}
-
-# pdf("./case_studies/figs/fruitflies_differences2.pdf", width = 8, height = 5)
-# par(mfrow = c(1, 2))
-for (cond in 1:2) {
-  plot(NA,
-    xlim = c(0, 24), ylim = c(-0.7, 0.7), xlab = "time of day", ylab = "difference to main effect Pr(active)",
-    bty = "n", main = conditions[cond], xaxt = "n"
-  )
-  axis(1, at = seq(0, 24, by = 4), labels = seq(0, 24, by = 4))
-  # mean
-  abline(h = 0, lwd = 2)
-  # individual flies
-  for (a in 1:nAnimals) {
-    lines(1:L / 2, DeltaDiff[, state, cond, a], col = alpha(a, 0.3), type = "l", pch = 20)
-  }
-  # indicate light
-  polygon(x = c(0, 8, 8, 0), y = c(-0.02, -0.02, 0, 0), col = "black", border = "black")
-  if(cond == 1){
-    polygon(x = c(8, 20, 20, 8), y = c(-0.02, -0.02, 0, 0), col = "white", border = "black")
-  } else{
-    polygon(x = c(8, 20, 20, 8), y = c(-0.02, -0.02, 0, 0), col = "#00000098", border = "black")
-
-  }
-  polygon(x = c(20, 24, 24, 20), y = c(-0.02, -0.02, 0, 0), col = "black", border = "black")
-}
-#dev.off()
-
-
-
+# dev.off()
