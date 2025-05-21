@@ -4,9 +4,7 @@
 # devtools::install_github("janoleko/LaMa")
 library(LaMa)
 
-# data preprocessin and spatial stuff
-library(dplyr)
-library(zoo)
+# spatial stuff
 library(sf)
 library(sp)
 library(rnaturalearth)
@@ -15,7 +13,8 @@ library(rnaturalearth)
 ## loading the data
 data <- readRDS("./data/muskox_winter.rds")
 
-## color
+
+## color palette
 color <- c("orange", "deepskyblue", "seagreen2")
 
 
@@ -56,15 +55,18 @@ boundary_df <- data.frame(x = boundary_df[,1], y = boundary_df[,2])
 bnd_main = boundary_df[25:142, ]
 bnd_island = boundary_df[143:203, ]
 
-plot(bnd_main$x, bnd_main$y, type = "l")
-lines(bnd_island$x, bnd_island$y, type = "l", col = "blue")
-# works
 
 
 ###########################################################################
 ## Fitting models #########################################################
 ###########################################################################
 
+# Initialising IC table ---------------------------------------------------
+
+IC_table <- data.frame(model = 1:5,
+                       llk = rep(NA, 5),
+                       AIC = rep(NA, 5),
+                       BIC = rep(NA, 5))
 
 # Simple homogeneous model ------------------------------------------------
 
@@ -111,34 +113,35 @@ obj <- MakeADFun(nll, par)
 ## model fitting
 opt <- nlminb(obj$par, obj$fn, obj$gr)
 
-llk = - opt$objective
-aic = - 2 * llk + 2 * length(opt$par)
-bic = - 2 * llk + log(nrow(data)) * length(opt$par)
-
 ## extracting results
-mod <- obj$report()
-mu <- mod$mu
-sigma <- mod$sigma
-kappa <- mod$kappa
-delta <- mod$delta
+mod_hom <- obj$report()
+mu <- mod_hom$mu
+sigma <- mod_hom$sigma
+kappa <- mod_hom$kappa
+delta <- mod_hom$delta
 
+## information criteria
+
+mod_hom$AIC = 2 * opt$objective + 2 * length(obj$par)
+mod_hom$BIC = 2 * opt$objective + log(nrow(data)) * length(obj$par)
+IC_table[1, 2:4] = c(- opt$objective, mod_hom$AIC, mod_hom$BIC)
 
 ## visualising fitted state-dependent distributions
 # step length
 hist(data$step, breaks = 100, xlim = c(0, 700), ylim = c(0, 0.015), prob = TRUE)
 for(j in 1:3){
-  curve(delta[j]*dgamma2(x, mu[j], sigma[j]), add = TRUE,
+  curve(delta[j] * dgamma2(x, mu[j], sigma[j]), add = TRUE,
         col = color[j], lwd = 2, n = 500)
 }
 # turning angle
 hist(data$angle, breaks = 30, prob = TRUE)
 for(j in 1:3){
-  curve(delta[j]*dvm(x, 0, kappa[j]), add = TRUE,
+  curve(delta[j] * dvm(x, 0, kappa[j]), add = TRUE,
         col = color[j], lwd = 2, n = 500)
 }
 
 ## state decoding
-states <- viterbi(mod = mod)
+states <- viterbi(mod = mod_hom)
 
 ## plotting decoded states
 plot(data$x, data$y, col = scales::alpha(color[states], 0.3), pch = 20)
@@ -153,6 +156,9 @@ modmat <- make_matrices(~ s(x, y, k = 50), data = data) # calls mgcv under the h
 Z <- modmat$Z # design matrix
 S <- modmat$S # list of penalty matrices (in this case only one)
 
+# more flexible tpm constructor than in LaMa
+# Z and beta and be lists, hence different covariates can be included for each
+# off-diagonol element
 tpm_g2 <- function(Z, beta, byrow = FALSE, report = TRUE) {
 
   K <- length(beta) # beta is list of parameter vectors
@@ -247,31 +253,26 @@ dat <- list(
   lambda = 1e3
 )
 
-mod2 = qreml(pnll, par, dat,
-             random = "beta_xy",
-             silent = 0)
+# mod_space = qreml(pnll, par, dat,
+#                   random = "beta_xy",
+#                   silent = 0)
+#
+# saveRDS(mod_space, file = "./case_studies/objects/muskox_mod_space.rds")
 
-saveRDS(mod2, file = "./case_studies/objects/muskox_mod_space.rds")
-mod2 = readRDS("./case_studies/objects/muskox_mod_space.rds")
+mod_space = readRDS("./case_studies/objects/muskox_mod_space.rds")
 
-dat$lambda = 0
-mod2$llk = pnll(mod2$par)
+summary(mod_space)
 
-summary(mod2)
+## information criteria
+IC_table[2, 2:4] = c(mod_space$llk, AIC(mod_space), BIC(mod_space))
 
-AIC.qremlModel(mod2)
-BIC(mod2)
+eta = mod_space$par$eta
+beta = c(mod_space$par$beta0, mod_space$par$beta_xy)
 
-mod2$n_fixpar
-mod2$edf
+data$Pr23 = mod_space$Gamma[3,2,]
 
-eta = mod2$par$eta
-beta = c(mod2$par$beta0, mod2$par$beta_xy)
-
-data$Pr23 = mod2$Gamma[3,2,]
-
-states = viterbi_g(mod = mod2)
-find = which(states == 2)
+states = viterbi_g(mod = mod_space)
+find = which(states == 2) # indices of decoded foraging state
 
 # plot the estimated field
 # Define grid range
@@ -294,7 +295,7 @@ Z_pred = pred_matrix(modmat, newdata = grid_data)
 
 beta <- matrix(0, 6, ncol(Z))
 beta[-4,1] <- eta
-beta[4,] <- c(mod2$par$beta0, mod2$par$beta_xy)
+beta[4,] <- c(mod_space$par$beta0, mod_space$par$beta_xy)
 Gamma <- tpm_g(Z_pred, beta)
 
 pr = Gamma[3,2,]
@@ -320,7 +321,9 @@ legend("top", legend = round(seq(0, 1, length = 6),1),
 library(grDevices)  # Needed for color functions
 library(graphics)   # Needed for rasterImage
 
-pdf("./case_studies/figs/muskox_space.pdf", width = 7, height = 7)
+
+# pdf("./case_studies/figs/muskox_space.pdf", width = 7, height = 7)
+png("./case_studies/figs/muskox_space.png", width = 3000, height = 3000, res = 450)
 
 # Create the main plot
 image(x_seq, y_seq, Pr, col = hcl.colors(100),
@@ -415,31 +418,25 @@ dat = list(
   lambda = c(1e3, 1e3, 1e4, 1e4)
 )
 
-system.time(
-  mod3 <- qreml(pnll2, par, dat,
-                random = c("beta_xy", "beta_t", "beta_xy_t"),
-                silent = 0)
-)
+# system.time(
+#   mod_spacetime <- qreml(pnll2, par, dat,
+#                          random = c("beta_xy", "beta_t", "beta_xy_t"),
+#                          silent = 0)
+# )
+# saveRDS(mod_spacetime, file = "./case_studies/objects/muskox_mod_spacetime.rds")
 
-dat$lambda = rep(0, 4)
-mod3$llk = -pnll2(mod3$par)
+mod_spacetime = readRDS("./case_studies/objects/muskox_mod_spacetime.rds")
 
-AIC.qremlModel(mod3)
-BIC(mod3)
-
-saveRDS(mod3, file = "./case_studies/objects/muskox_mod_spacetime.rds")
-
-mod3$edf
-mod3$n_fixpar
-mod3$all_edf
+IC_table[5, 2:4] = c(mod_spacetime$llk, AIC(mod_spacetime), BIC(mod_spacetime))
 
 
-eta = mod3$par$eta
-beta = c(mod3$par$beta0, mod3$par$beta_xy, mod3$par$beta_t, mod3$par$beta_xy_t)
+par = mod_spacetime$par
+eta = par$eta
+beta = c(par$beta0, par$beta_xy, par$beta_t, par$beta_xy_t)
 
-data$Pr23 = mod3$Gamma[3,2,]
+data$Pr23 = mod_spacetime$Gamma[3,2,]
 
-states = viterbi_g(mod = mod3)
+states = viterbi_g(mod = mod_spacetime)
 find = which(states == 2)
 
 
@@ -465,7 +462,7 @@ Z_pred = predict(modmat2, newdata = grid_data)
 
 beta <- matrix(0, 6, ncol(Z))
 beta[-4,1] <- eta
-beta[4,] <- c(mod3$par$beta0, mod3$par$beta_xy, mod3$par$beta_t, mod3$par$beta_xy_t)
+beta[4,] <- c(par$beta0, par$beta_xy, par$beta_t, par$beta_xy_t)
 Gamma <- tpm_g(Z_pred, beta)
 
 
@@ -553,17 +550,16 @@ dat = list(
   lambda = c(1e3, 1e3)
 )
 
-system.time(
-  mod4 <- qreml(pnll3, par, dat,
-                random = c("beta_xy", "beta_t"),
-                silent = 0)
-)
+# system.time(
+#   mod_add <- qreml(pnll3, par, dat,
+#                    random = c("beta_xy", "beta_t"),
+#                    silent = 0)
+# )
+# saveRDS(mod_add, file = "./case_studies/objects/muskox_mod_add.rds")
 
-dat$lambda = c(0,0)
-mod4$llk = -pnll3(mod4$par)
+mod_add = readRDS("./case_studies/objects/muskox_mod_add.rds")
+IC_table[4, 2:4] = c(mod_add$llk, AIC(mod_add), BIC(mod_add))
 
-aic4 = AIC.qremlModel(mod4)
-bic4 = BIC(mod4)
 
 
 
@@ -626,33 +622,21 @@ dat = list(
   lambda = 1e3
 )
 
-system.time(
-  mod5 <- qreml(pnll4, par, dat,
-                random = "beta_t",
-                silent = 0)
-)
+# system.time(
+#   mod_time <- qreml(pnll4, par, dat,
+#                     random = "beta_t",
+#                     silent = 0)
+# )
+# saveRDS(mod_time, file = "./case_studies/objects/muskox_mod_time.rds")
+mod_time = readRDS("./case_studies/objects/muskox_mod_time.rds")
 
-dat$lambda = 0
-mod5$llk = -pnll4(mod5$par)
-aic5 = AIC.qremlModel(mod5)
-bic5 = BIC(mod5)
-
-help(package = "LaMa")
+IC_table[3, 2:4] = c(mod_time$llk, AIC(mod_time), BIC(mod_time))
 
 
 
+diff_IC_table <- IC_table
+diff_IC_table$AIC = IC_table$AIC - IC_table$AIC[4]
+diff_IC_table$BIC = IC_table$BIC - IC_table$BIC[3]
 
-
-
-# create data
-set.seed(100)
-x <- rgamma(100,1,1)
-#create knots based on data, pow=.5
-Len <- 30
-deg <- 3
-pow <- .5
-knots = seq(min(x, na.rm = TRUE)^pow, max(x, na.rm = TRUE)^pow, length =Len - deg)^(1 / pow)
-nknots <- length(knots)
-quant <- qgamma( (1:nknots)/(nknots+1),1,1)
-plot(knots, quant)
-abline(1,1)
+round(IC_table, 2)
+round(diff_IC_table, 2 )
