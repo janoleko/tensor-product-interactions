@@ -10,6 +10,7 @@ data0 <- readRDS("./data/fruitflies_genotype0.rds")
 # modified genotype
 data1 <- readRDS("./data/fruitflies_genotype1.rds")
 
+data = list(data0 = data0, data1 = data1)
 
 ## number of observations
 nrow(data0)
@@ -139,22 +140,22 @@ map <- list(lambda = c(
 ))
 
 
-## fitting the model with qREML
-system.time(
-  mod <- qreml(pnll, par, dat,
-    random = c(
-      "beta_riLD", "beta_riDD",
-      "beta_timeLD", "beta_timeDD",
-      "beta_tiLD", "beta_tiDD"
-    ),
-    map = map,
-    silent = 0
-  )
-)
-# mod0 2.5 h
-# mod1 2.3 h
-saveRDS(mod0, "./case_studies/objects/fruitflies_mod_genotype0.rds")
-saveRDS(mod1, "./case_studies/objects/fruitflies_mod_genotype1.rds")
+# ## fitting the model with qREML
+# system.time(
+#   mod <- qreml(pnll, par, dat,
+#     random = c(
+#       "beta_riLD", "beta_riDD",
+#       "beta_timeLD", "beta_timeDD",
+#       "beta_tiLD", "beta_tiDD"
+#     ),
+#     map = map,
+#     silent = 0
+#   )
+# )
+# # mod0 2.5 h
+# # mod1 2.3 h
+# saveRDS(mod0, "./case_studies/objects/fruitflies_mod_genotype0.rds")
+# saveRDS(mod1, "./case_studies/objects/fruitflies_mod_genotype1.rds")
 
 ########################################################################
 
@@ -175,6 +176,47 @@ AIC(mod0)
 AIC(mod1)
 BIC(mod0)
 BIC(mod1)
+
+
+## plotting state-dependent distributions
+states0 = viterbi_g(mod = mod0)
+delta_hat0 = c(mean(states0 == 1), mean(states0 == 2))
+states1 = viterbi_g(mod = mod1)
+delta_hat1 = c(mean(states1 == 1), mean(states1 == 2))
+
+# pdf("./case_studies/figs/fruitflies_marginal.pdf", width = 8, height = 4)
+
+par(mfrow = c(1,2))
+hist(data[[1]]$activity, breaks = 30, bor = "white",
+     xlim = c(0, 150), ylim = c(0, 0.03), prob = TRUE,
+     main = "wild type", xlab = "activity count", ylab = "frequency")
+size = 1/mod0$phi
+mu = mod0$mu
+pmf = matrix(NA, 2, 151)
+for(j in 1:2){
+  x = 0:150
+  pmf[j,] = delta_hat0[j] * dnbinom(x, mu = mu[j], size = size[j])
+  lines(x, pmf[j,], type = "l", lwd = 2, col = color[j])
+}
+lines(x, colSums(pmf), type = "l", lwd = 2, col = "black", lty = 2)
+legend("topright", legend = c("inactive", "active", "marginal"), col = c(color[1:2], "black"),
+       lty = c(1,1,2), bty = "n", lwd = 2)
+
+hist(data[[2]]$activity, breaks = 30, bor = "white",
+     xlim = c(0, 150), ylim = c(0, 0.03), prob = TRUE,
+     main = "modified genotype", xlab = "activity count", ylab = "frequency")
+size = 1/mod1$phi
+mu = mod1$mu
+for(j in 1:2){
+  x = 0:150
+  pmf[j,] = delta_hat0[j] * dnbinom(x, mu = mu[j], size = size[j])
+  lines(x, pmf[j,], type = "l", lwd = 2, col = color[j])
+}
+lines(x, colSums(pmf), type = "l", lwd = 2, col = "black", lty = 2)
+
+# dev.off()
+
+
 
 ## extracting parameters
 beta <- list(beta0 = mod0$beta,

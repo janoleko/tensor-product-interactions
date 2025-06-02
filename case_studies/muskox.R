@@ -85,7 +85,7 @@ nll <- function(par){
   ind = which(!is.na(step) & !is.na(angle))
   for(j in 1:N){
     allprobs[ind,j] = dgamma2(step[ind],mu[j],sigma[j]) *
-      dvm(angle[ind], 0, kappa[j])
+      dvm(angle[ind], c(pi,0,0)[j], kappa[j])
   }
   ## forward algorithm
   -forward(delta, Gamma, allprobs, ID)
@@ -127,25 +127,43 @@ mod_hom$BIC = 2 * opt$objective + log(nrow(data)) * length(obj$par)
 IC_table[1, 2:4] = c(- opt$objective, mod_hom$AIC, mod_hom$BIC)
 
 ## visualising fitted state-dependent distributions
+
+# pdf("./case_studies/figs/muskox_marginal.pdf", width = 8, height = 4)
+
+par(mfrow = c(1,2))
 # step length
-hist(data$step, breaks = 100, xlim = c(0, 700), ylim = c(0, 0.015), prob = TRUE)
+hist(data$step, breaks = 200, xlim = c(0, 600), ylim = c(0, 0.01), prob = TRUE, bor = "white",
+     main = "", xlab = "step length", ylab = "density")
 for(j in 1:3){
   curve(delta[j] * dgamma2(x, mu[j], sigma[j]), add = TRUE,
         col = color[j], lwd = 2, n = 500)
 }
+curve(delta[1] * dgamma2(x, mu[1], sigma[1]) +
+        delta[2] * dgamma2(x, mu[2], sigma[2]) +
+        delta[3] * dgamma2(x, mu[3], sigma[3]), add = TRUE,
+      lty = 2, lwd = 2, n = 500)
+legend("topright", legend = c("resting", "foraging", "travelling", "marginal"), col = c(color[1:3], "black"),
+       lty = c(1,1,1,2), bty = "n", lwd = 2)
 # turning angle
-hist(data$angle, breaks = 30, prob = TRUE)
+hist(data$angle, breaks = 30, prob = TRUE, bor = "white",
+     main = "", xlab = "step length", ylab = "density")
 for(j in 1:3){
-  curve(delta[j] * dvm(x, 0, kappa[j]), add = TRUE,
+  curve(delta[j] * dvm(x, c(pi,0,0)[j], kappa[j]), add = TRUE,
         col = color[j], lwd = 2, n = 500)
 }
+curve(delta[1] * dvm(x, pi, kappa[1]) +
+        delta[2] * dvm(x, 0, kappa[2]) +
+        delta[3] * dvm(x, 0, kappa[3]), add = TRUE,
+      lty = 2, lwd = 2, n = 500)
+
+# dev.off()
 
 ## state decoding
 states <- viterbi(mod = mod_hom)
 
 ## plotting decoded states
-plot(data$x, data$y, col = scales::alpha(color[states], 0.3), pch = 20)
-plot(data$step, col = color[states], xlim = c(0, 10000), type = "h")
+# plot(data$x, data$y, col = scales::alpha(color[states], 0.3), pch = 20)
+# plot(data$step, col = color[states], xlim = c(0, 10000), type = "h")
 
 
 
@@ -226,7 +244,7 @@ pnll <- function(par){
   ind <- which(!is.na(step) & !is.na(angle))
   for(j in 1:N){
     allprobs[ind,j] <- dgamma2(step[ind],mu[j],sigma[j]) *
-      dvm(angle[ind], 0, kappa[j])
+      dvm(angle[ind], c(pi,0,0)[j], kappa[j])
   }
   ## forward algorithm
   -forward_g(Delta, Gamma, allprobs, trackID = ID) +
@@ -253,11 +271,11 @@ dat <- list(
   lambda = 1e3
 )
 
-# mod_space = qreml(pnll, par, dat,
-#                   random = "beta_xy",
-#                   silent = 0)
-#
-# saveRDS(mod_space, file = "./case_studies/objects/muskox_mod_space.rds")
+mod_space = qreml(pnll, par, dat,
+                  random = "beta_xy",
+                  silent = 0)
+
+saveRDS(mod_space, file = "./case_studies/objects/muskox_mod_space2.rds")
 
 mod_space = readRDS("./case_studies/objects/muskox_mod_space.rds")
 
@@ -308,14 +326,14 @@ Pr <- matrix(grid_data$pr, nrow = length(x_seq), ncol = length(y_seq))
 # Pr2 <- matrix(grid_data2$pr, nrow = length(x_seq), ncol = length(y_seq))
 
 
-image(x_seq, y_seq, Pr, col = hcl.colors(100),
-      xlim = c(465000, 560000),
-      xlab = "UTM easting", ylab = "UTM northing",
-      main = "Pr(travelling → foraging)",
-      bty = "n", asp = 1)
-# add a legend
-legend("top", legend = round(seq(0, 1, length = 6),1),
-       fill = hcl.colors(100)[c(1, 1:5*20)], bty = "n", horiz = TRUE, border = NA)
+# image(x_seq, y_seq, Pr, col = hcl.colors(100),
+#       xlim = c(465000, 560000),
+#       xlab = "UTM easting", ylab = "UTM northing",
+#       main = "Pr(travelling → foraging)",
+#       bty = "n", asp = 1)
+# # add a legend
+# legend("top", legend = round(seq(0, 1, length = 6),1),
+#        fill = hcl.colors(100)[c(1, 1:5*20)], bty = "n", horiz = TRUE, border = NA)
 
 
 library(grDevices)  # Needed for color functions
@@ -323,7 +341,7 @@ library(graphics)   # Needed for rasterImage
 
 
 # pdf("./case_studies/figs/muskox_space.pdf", width = 7, height = 7)
-png("./case_studies/figs/muskox_space.png", width = 3000, height = 3000, res = 450)
+# png("./case_studies/figs/muskox_space.png", width = 3000, height = 3000, res = 450)
 
 # Create the main plot
 image(x_seq, y_seq, Pr, col = hcl.colors(100),
@@ -347,15 +365,15 @@ legend_values <- round(seq(0, 1, length.out = 6), 1)
 legend_positions <- seq(legend_x[1], legend_x[2], length.out = 6)
 text(legend_positions, legend_y[2] + 2500, labels = legend_values, cex = 0.9)
 
-dev.off()
+# dev.off()
 
 
 
 # Space-time interaction --------------------------------------------------
 
 ## creating model matrices
-modmat2 = make_matrices(~ s(x, y, bs = "tp", k = 50) + s(tday, bs = "cc", k = 5) +
-                         ti(x, y, tday, d = c(2,1), bs = c("tp", "cc"), k = c(50, 5)),
+modmat2 = make_matrices(~ s(x, y, bs = "tp", k = 50) + s(tday, bs = "cc", k = 8) +
+                         ti(x, y, tday, d = c(2,1), bs = c("tp", "cc"), k = c(50, 8)),
                        knots = list(tday = c(0, 24)),
                        data = data)
 Z = modmat2$Z # large design matrix
@@ -388,7 +406,7 @@ pnll2 <- function(par){
   ind = which(!is.na(step) & !is.na(angle))
   for(j in 1:N){
     allprobs[ind,j] = dgamma2(step[ind],mu[j],sigma[j]) *
-      dvm(angle[ind], 0, kappa[j])
+      dvm(angle[ind], c(pi, 0, 0)[j], kappa[j])
   }
   ## forward algorithm
   -forward_g(Delta, Gamma, allprobs, trackID = ID) +
@@ -418,12 +436,13 @@ dat = list(
   lambda = c(1e3, 1e3, 1e4, 1e4)
 )
 
-# system.time(
-#   mod_spacetime <- qreml(pnll2, par, dat,
-#                          random = c("beta_xy", "beta_t", "beta_xy_t"),
-#                          silent = 0)
-# )
-# saveRDS(mod_spacetime, file = "./case_studies/objects/muskox_mod_spacetime.rds")
+system.time(
+  mod_spacetime <- qreml(pnll2, par, dat,
+                         random = c("beta_xy", "beta_t", "beta_xy_t"),
+                         silent = 0)
+)
+# basis functions -> 8.7 h
+saveRDS(mod_spacetime, file = "./case_studies/objects/muskox_mod_spacetime2.rds")
 
 mod_spacetime = readRDS("./case_studies/objects/muskox_mod_spacetime.rds")
 
@@ -472,13 +491,13 @@ grid_data$pr = pr
 grid_data$pr[inside == 0] = NA
 # grid_data2$pr[inside == 1] = NA
 
-
+par(mfrow = c(1,1))
 for(t in 1:24){
   this_grid = grid_data[grid_data$tday == t,]
   thisPr <- matrix(this_grid$pr, nrow = length(x_seq), ncol = length(y_seq))
 
   image(x_seq, y_seq, thisPr, col = hcl.colors(100),
-        xlim = c(465000, 560000),
+        xlim = c(465000, 560000), ylim = c(8230000, 8300000),
         xlab = "UTM easting", ylab = "UTM northing",
         main = paste0("Pr(travelling → foraging)", " - time of day: ", t, ":00"),
         bty = "n", asp = 1)
@@ -486,6 +505,34 @@ for(t in 1:24){
   Sys.sleep(0.25)
 }
 
+# plot
+par(mfrow = c(1,2))
+
+for(t in c(1, 13)){
+  this_grid = grid_data[grid_data$tday == t,]
+  thisPr <- matrix(this_grid$pr, nrow = length(x_seq), ncol = length(y_seq))
+
+  image(x_seq, y_seq, thisPr, col = hcl.colors(100),
+        xlim = c(465000, 560000), ylim = c(8230000, 8300000),
+        xlab = "UTM easting", ylab = "UTM northing",
+        main = paste0("time of day: ", t, ":00"),
+        bty = "n", asp = 1)
+
+  # Define gradient legend position
+  legend_x <- c(480000, 545000)  # X range for legend
+  legend_y <- c(8300000-4000, 8300000-2000)  # Adjust above the plot
+
+  # Create a color gradient
+  legend_colors <- as.raster(matrix(hcl.colors(100), nrow = 1))
+
+  # Draw the gradient legend
+  rasterImage(legend_colors, legend_x[1], legend_y[1], legend_x[2], legend_y[2])
+
+  # Add numerical labels
+  legend_values <- round(seq(0, 1, length.out = 6), 1)
+  legend_positions <- seq(legend_x[1], legend_x[2], length.out = 6)
+  text(legend_positions, legend_y[2] + 2500, labels = legend_values, cex = 0.9)
+}
 
 
 
@@ -521,7 +568,7 @@ pnll3 <- function(par){
   ind = which(!is.na(step) & !is.na(angle))
   for(j in 1:N){
     allprobs[ind,j] = dgamma2(step[ind],mu[j],sigma[j]) *
-      dvm(angle[ind], 0, kappa[j])
+      dvm(angle[ind], c(pi, 0, 0)[j], kappa[j])
   }
   ## forward algorithm
   -forward_g(Delta, Gamma, allprobs, trackID = ID) +
@@ -594,7 +641,7 @@ pnll4 <- function(par){
   ind = which(!is.na(step) & !is.na(angle))
   for(j in 1:N){
     allprobs[ind,j] = dgamma2(step[ind],mu[j],sigma[j]) *
-      dvm(angle[ind], 0, kappa[j])
+      dvm(angle[ind], c(pi, 0, 0)[j], kappa[j])
   }
   ## forward algorithm
   -forward_g(Delta, Gamma, allprobs, trackID = ID) +
@@ -635,8 +682,8 @@ IC_table[3, 2:4] = c(mod_time$llk, AIC(mod_time), BIC(mod_time))
 
 
 diff_IC_table <- IC_table
-diff_IC_table$AIC = IC_table$AIC - IC_table$AIC[4]
-diff_IC_table$BIC = IC_table$BIC - IC_table$BIC[3]
+colmin = apply(diff_IC_table[,3:4], 2, min)
+diff_IC_table[,3:4] <- t(t(diff_IC_table[,3:4]) - colmin)
 
 round(IC_table, 2)
-round(diff_IC_table, 2 )
+round(diff_IC_table, 2)

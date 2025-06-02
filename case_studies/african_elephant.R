@@ -94,7 +94,7 @@ IC_table[1, 2:4] = c(-obj_hom$fn(), mod_hom$AIC, mod_hom$BIC) # saving
 
 ## plotting state-dependent distributions
 
-# pdf("./case_studies/figs/elephant_marginal.pdf", width = 8, height = 4)
+pdf("./case_studies/figs/elephant_marginal.pdf", width = 8, height = 4)
 
 par(mfrow = c(1,2))
 hist(data$step, breaks = 100, prob = T, bor = "white", xlim = c(0,5), main = "", xlab = "step length", ylab = "density")
@@ -103,7 +103,7 @@ curve(delta[2]*dgamma2(x, mu[2], sigma[2]), add = T, lwd = 2, col = color[2], n 
 curve(delta[1]*dgamma2(x, mu[1], sigma[1])+delta[2]*dgamma2(x, mu[2], sigma[2]),
       add = T, lwd = 2, lty = 2, n = 500)
 legend("topright", legend = c("encamped", "exploratory", "marginal"), col = c(color[1], color[2], "black"),
-       lty = c(1,1,2), bty = "n")
+       lty = c(1,1,2), bty = "n", lwd = 2)
 
 hist(data$angle, breaks = 20, prob = T, bor = "white", main = "", xlab = "turning angle", ylab = "density")
 curve(delta[1]*dvm(x, 0, kappa[1]), add = T, lwd = 2, col = color[1], n = 500)
@@ -111,7 +111,7 @@ curve(delta[2]*dvm(x, 0, kappa[2]), add = T, lwd = 2, col = color[2], n = 500)
 curve(delta[1]*dvm(x, 0, kappa[1])+delta[2]*dvm(x, 0, kappa[2]),
       add = T, lwd = 2, lty = 2, n = 500)
 
-# dev.off()
+dev.off()
 
 
 
