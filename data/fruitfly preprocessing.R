@@ -4,7 +4,7 @@ library(dplyr)
 data = readRDS("./data/fruitflies_genotype0_raw.rds")
 
 
-## remove columns with sin and cos
+## remove columns with sine and cosine
 data = data %>% select(-contains("sin"), -contains("cos"))
 
 ## set activity while startling to NA
@@ -29,6 +29,8 @@ data = data %>%
   )
 
 aniIDs = unique(data$aniID)
+
+# using a subset only for genotype 1
 set.seed(123)
 subIDs = sample(aniIDs, 35, replace = FALSE)
 
