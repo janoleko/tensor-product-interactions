@@ -25,9 +25,4 @@ analysing
 Code for reproducing all results can be found in the `case_studies`
 directory.
 
-<figure>
-<img src="./case_studies/figs/muskox_spacetime.png"
-alt="Time-varying spatial smooth for muskox behaviour" />
-<figcaption aria-hidden="true">Time-varying spatial smooth for muskox
-behaviour</figcaption>
-</figure>
+![](./case_studies/figs/muskox_spacetime.png)

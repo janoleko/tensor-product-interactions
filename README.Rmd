@@ -25,4 +25,4 @@ The methodology is illustrated through three applied case studies analysing
 
 Code for reproducing all results can be found in the `case_studies` directory.
 
-![Time-varying spatial smooth for muskox behaviour](./case_studies/figs/muskox_spacetime.png)
+![](./case_studies/figs/muskox_spacetime.png)
